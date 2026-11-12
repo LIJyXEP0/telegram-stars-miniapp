@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#101722">
+  <title>Мои заказы</title>
+  <script src="config.js"></script>
+  <script src="https://telegram.org/js/telegram-web-app.js?65"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: var(--tg-theme-bg-color, #101722);
+      --panel: var(--tg-theme-secondary-bg-color, #182333);
+      --text: var(--tg-theme-text-color, #f1f5fb);
+      --muted: var(--tg-theme-hint-color, #96a4b8);
+      --accent: var(--tg-theme-button-color, #5b8def);
+      --accent-text: var(--tg-theme-button-text-color, #fff);
+      --line: color-mix(in srgb, var(--muted) 20%, transparent);
+      font: 16px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); }
+    main { width: min(100%, 620px); margin: 0 auto; padding: 18px 16px calc(28px + env(safe-area-inset-bottom)); }
+    header { padding: 10px 2px 18px; }
+    header p, .muted { color: var(--muted); margin: 5px 0 0; }
+    h1 { font-size: 25px; margin: 0; letter-spacing: -.4px; }
+    h2 { font-size: 18px; margin: 0 0 12px; }
+    .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+    button, input { font: inherit; }
+    button { border: 0; border-radius: 12px; padding: 12px 14px; background: var(--panel); color: var(--text); cursor: pointer; }
+    button.active, button.primary { background: var(--accent); color: var(--accent-text); font-weight: 650; }
+    button:disabled { opacity: .5; cursor: default; }
+    .panel, .order { background: var(--panel); border-radius: 16px; padding: 17px; }
+    .panel { margin-bottom: 12px; }
+    .order-list { display: grid; gap: 10px; }
+    .order-title { display: flex; justify-content: space-between; gap: 10px; font-weight: 650; }
+    .order-meta { color: var(--muted); font-size: 14px; margin-top: 6px; overflow-wrap: anywhere; }
+    .badge { border-radius: 999px; padding: 3px 9px; font-size: 12px; background: color-mix(in srgb, var(--accent) 24%, transparent); white-space: nowrap; }
+    label { display: block; font-size: 14px; color: var(--muted); margin: 13px 0 6px; }
+    input { width: 100%; min-height: 46px; border-radius: 11px; border: 1px solid var(--line); background: var(--bg); color: var(--text); padding: 10px 12px; outline: none; }
+    input:focus { border-color: var(--accent); }
+    .form-actions { margin-top: 12px; }
+    .notice { min-height: 24px; margin: 10px 0 0; color: var(--muted); font-size: 14px; }
+    .notice.error { color: #ff8585; }
+    .support { display: block; width: 100%; margin-top: 12px; text-align: center; text-decoration: none; }
+    .hidden { display: none !important; }
+    @media (prefers-reduced-motion: no-preference) { button { transition: filter .15s ease, transform .15s ease; } button:active { transform: scale(.985); } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>📦 Мои заказы</h1>
+      <p id="welcome">Статус и история заказов</p>
+    </header>
+
+    <div class="tabs" role="tablist" aria-label="Разделы">
+      <button id="orders-tab" class="active" type="button" role="tab" aria-selected="true">Заказы</button>
+      <button id="claim-tab" type="button" role="tab" aria-selected="false">Привязать заказ</button>
+    </div>
+
+    <section id="orders-view" class="panel" role="tabpanel">
+      <div class="order-title"><h2>История</h2><button id="refresh" type="button">Обновить</button></div>
+      <div id="orders" class="order-list" aria-live="polite"></div>
+      <p id="orders-notice" class="notice">Загружаю заказы…</p>
+    </section>
+
+    <section id="claim-view" class="panel hidden" role="tabpanel">
+      <h2>Привязать криптозаказ</h2>
+      <p class="muted">Введи номер заказа и секретный код отслеживания со страницы оформления. Код связывает заказ с твоим Telegram-аккаунтом.</p>
+      <form id="claim-form">
+        <label for="order-id">Номер заказа</label>
+        <input id="order-id" name="order_id" autocomplete="off" autocapitalize="characters" maxlength="32" required placeholder="32 символа">
+        <label for="tracking-token">Код отслеживания</label>
+        <input id="tracking-token" name="tracking_token" autocomplete="off" autocapitalize="off" maxlength="64" required placeholder="Секретный код со страницы заказа">
+        <div class="form-actions"><button id="claim-button" class="primary" type="submit">Привязать заказ</button></div>
+      </form>
+      <p id="claim-notice" class="notice" aria-live="polite"></p>
+    </section>
+
+    <section class="panel">
+      <h2>Нужна помощь?</h2>
+      <p class="muted">Напиши в поддержку и приложи номер заказа. В Mini App нет оплаты и перехода к крипточекауту.</p>
+      <a id="support-link" class="support hidden" href="#" target="_blank" rel="noopener"><button class="primary" type="button">Связаться с поддержкой</button></a>
+      <p id="support-note" class="notice">Загружаю контакт поддержки…</p>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      const tg = window.Telegram?.WebApp;
+      const apiBase = (window.MINI_APP_CONFIG?.apiBase || '').trim().replace(/\/$/, '') || window.location.origin;
+      const initData = tg?.initData || '';
+      const ordersElement = document.getElementById('orders');
+      const ordersNotice = document.getElementById('orders-notice');
+      const claimNotice = document.getElementById('claim-notice');
+      const labels = {
+        created: 'Создан', awaiting_payment: 'Ожидает оплату', paid: 'Оплачен', processing: 'В обработке',
+        completed: 'Выполнен', expired: 'Истёк', cancelled: 'Отменён', underpaid: 'Не хватает оплаты',
+        overpaid: 'Переплата · проверка', late_payment: 'Поздняя оплата · проверка', failed: 'Ошибка',
+        refund_pending: 'Возврат на проверке', refunded: 'Возвращён', needs_manual_review: 'Проверка поддержки',
+        unmatched_transfer: 'Платёж требует проверки'
+      };
+
+      tg?.ready();
+      tg?.expand();
+      if (tg?.themeParams?.bg_color) tg.setHeaderColor(tg.themeParams.bg_color);
+      const firstName = tg?.initDataUnsafe?.user?.first_name;
+      if (firstName) document.getElementById('welcome').textContent = `Привет, ${firstName}! Здесь можно проверить свои заказы.`;
+
+      function showNotice(element, message, isError = false) {
+        element.textContent = message;
+        element.classList.toggle('error', isError);
+      }
+
+      async function api(path, body) {
+        const response = await fetch(`${apiBase}${path}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store',
+          body: JSON.stringify({ ...body, init_data: initData })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.message || data.error || 'Не удалось выполнить запрос. Попробуй ещё раз.');
+        return data;
+      }
+
+      function renderOrders(items) {
+        ordersElement.replaceChildren();
+        if (!items.length) {
+          showNotice(ordersNotice, 'Пока нет привязанных заказов. Добавь заказ по номеру и коду отслеживания.');
+          return;
+        }
+        for (const item of items) {
+          const card = document.createElement('article');
+          card.className = 'order';
+          const title = document.createElement('div');
+          title.className = 'order-title';
+          const name = document.createElement('span');
+          name.textContent = item.product === 'stars' ? `⭐ ${item.quantity} Telegram Stars` : `💎 Telegram Premium · ${item.quantity} мес.`;
+          const badge = document.createElement('span');
+          badge.className = 'badge';
+          badge.textContent = labels[item.status] || item.status;
+          title.append(name, badge);
+          const meta = document.createElement('div');
+          meta.className = 'order-meta';
+          const date = new Date(Number(item.created_at) * 1000);
+          meta.textContent = `Заказ ${item.order_id} · @${item.recipient} · ${date.toLocaleString()}`;
+          const payment = document.createElement('div');
+          payment.className = 'order-meta';
+          payment.textContent = item.payment_amount
+            ? `Получено: ${item.payment_amount} ${String(item.payment_asset).toUpperCase()}`
+            : `К оплате: ${item.expected_amount} ${String(item.payment_asset).toUpperCase()}`;
+          card.append(title, meta, payment);
+          ordersElement.append(card);
+        }
+        showNotice(ordersNotice, `${items.length} заказ(ов)`);
+      }
+
+      async function loadOrders() {
+        if (!initData) {
+          ordersElement.replaceChildren();
+          showNotice(ordersNotice, 'Открой это окно через Telegram, чтобы безопасно загрузить заказы.', true);
+          return;
+        }
+        showNotice(ordersNotice, 'Загружаю заказы…');
+        try {
+          const result = await api('/api/miniapp/orders', {});
+          renderOrders(result.orders || []);
+        } catch (error) {
+          showNotice(ordersNotice, error.message, true);
+        }
+      }
+
+      document.getElementById('refresh').addEventListener('click', loadOrders);
+      document.getElementById('claim-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!initData) {
+          showNotice(claimNotice, 'Открой Mini App через Telegram.', true);
+          return;
+        }
+        const button = document.getElementById('claim-button');
+        button.disabled = true;
+        showNotice(claimNotice, 'Проверяю код…');
+        try {
+          const result = await api('/api/miniapp/claim', {
+            order_id: document.getElementById('order-id').value.trim().toUpperCase(),
+            tracking_token: document.getElementById('tracking-token').value.trim()
+          });
+          document.getElementById('claim-form').reset();
+          showNotice(claimNotice, `Заказ ${result.order.order_id} привязан к твоему аккаунту.`);
+          await loadOrders();
+          document.getElementById('orders-tab').click();
+        } catch (error) {
+          showNotice(claimNotice, error.message, true);
+        } finally {
+          button.disabled = false;
+        }
+      });
+
+      function selectTab(tabName) {
+        const ordersSelected = tabName === 'orders';
+        document.getElementById('orders-tab').classList.toggle('active', ordersSelected);
+        document.getElementById('orders-tab').setAttribute('aria-selected', String(ordersSelected));
+        document.getElementById('claim-tab').classList.toggle('active', !ordersSelected);
+        document.getElementById('claim-tab').setAttribute('aria-selected', String(!ordersSelected));
+        document.getElementById('orders-view').classList.toggle('hidden', !ordersSelected);
+        document.getElementById('claim-view').classList.toggle('hidden', ordersSelected);
+      }
+      document.getElementById('orders-tab').addEventListener('click', () => selectTab('orders'));
+      document.getElementById('claim-tab').addEventListener('click', () => selectTab('claim'));
+
+      fetch(`${apiBase}/api/miniapp/config`, { cache: 'no-store' })
+        .then((response) => response.json())
+        .then((config) => {
+          if (config.support_url) {
+            const link = document.getElementById('support-link');
+            link.href = config.support_url;
+            link.classList.remove('hidden');
+            document.getElementById('support-note').classList.add('hidden');
+          } else {
+            showNotice(document.getElementById('support-note'), 'Контакт поддержки пока не настроен. Напиши в чат бота.');
+          }
+        })
+        .catch(() => showNotice(document.getElementById('support-note'), 'Не удалось загрузить контакт поддержки.'));
+
+      loadOrders();
+      window.setInterval(loadOrders, 20_000);
+    })();
+  </script>
+</body>
+</html>

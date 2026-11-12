@@ -1,0 +1,28 @@
+catalog:
+  stars:
+    enabled: true
+    packages: [50, 100, 250, 500, 1000]
+  premium:
+    enabled: true
+    durations_months: [3, 6, 12]
+pricing:
+  margin_percent: "25"
+  fixed_fee_usd: "0.20"
+  output_places: 2
+  dry_run_mock_unit_cost_usd: "0.01"
+  fx_cache_seconds: 60
+  max_fx_deviation_percent: "10"
+payments:
+  assets: [ton, usdt]
+  order_ttl_seconds: 1800
+  grace_seconds: 600
+  amount_tolerance:
+    ton: "0.000000001"
+    usdt: "0.000001"
+  max_tron_amount_offset: "0.05"
+limits:
+  max_active_orders_per_user: 3
+  max_quantity:
+    stars: 1000000
+    premium: 12
+languages: [ru, en]

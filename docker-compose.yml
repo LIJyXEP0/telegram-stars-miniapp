@@ -1,0 +1,18 @@
+services:
+  stars-store:
+    build: .
+    env_file: .env
+    environment:
+      APP_DATABASE_PATH: /srv/app/data/app-orders.sqlite3
+      SITE_HOST: 0.0.0.0
+    restart: unless-stopped
+    ports:
+      - "${SITE_PORT:-8080}:8080"
+    volumes:
+      - ./data:/srv/app/data
+      - ./backups:/srv/app/backups
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
